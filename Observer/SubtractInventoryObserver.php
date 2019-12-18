@@ -13,6 +13,7 @@ use \Magento\Framework\Event\ObserverInterface;
 use \Magento\CatalogInventory\Api\StockManagementInterface;
 use \Magento\CatalogInventory\Model\Indexer\Stock\Processor as StockProcessor;
 use \Magento\Framework\Event\Observer as EventObserver;
+use \Magento\Catalog\Model\ResourceModel\Product as ProductResource;
 use \Psr\Log\LoggerInterface;
 
 class SubtractInventoryObserver implements ObserverInterface
@@ -28,6 +29,11 @@ class SubtractInventoryObserver implements ObserverInterface
     protected $itemsForReindex;
 
     /**
+     * @var ProductResource
+     */
+    protected $productResource;
+
+    /**
      * @var LoggerInterface
      */
     protected $logger;
@@ -36,15 +42,18 @@ class SubtractInventoryObserver implements ObserverInterface
      * SubtractInventoryObserver constructor.
      * @param StockManagementInterface $stockManagement
      * @param StockProcessor $stockIndexerProcessor
+     * @param ProductResource $productResource
      * @param LoggerInterface $logger
      */
     public function __construct(
         StockManagementInterface $stockManagement,
         StockProcessor $stockIndexerProcessor,
+        ProductResource $productResource,
         LoggerInterface $logger
     ) {
         $this->stockManagement = $stockManagement;
         $this->stockIndexerProcessor = $stockIndexerProcessor;
+        $this->productResource = $productResource;
         $this->logger = $logger;
     }
 
@@ -60,6 +69,18 @@ class SubtractInventoryObserver implements ObserverInterface
         $productQty = $observer->getEvent()->getProductQty();
 
         if ($order->getInventoryProcessed()) {
+            return $this;
+        }
+
+        // Filter out products not existing anymore
+        $productSkus = $this->productResource->getProductsSku(array_keys($productQty));
+        $filteredProductQty = [];
+        foreach ($productSkus as $row) {
+            $filteredProductQty[$row['entity_id']] = $productQty[$row['entity_id']];
+        }
+
+        if (empty($filteredProductQty)) {
+            $order->setInventoryProcessed(true);
             return $this;
         }
 
